@@ -1,0 +1,57 @@
+name: SonarQube - Node.js
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version to use
+        type: number
+        default: 20
+      sonar-project-key:
+        description: SonarQube project key
+        type: string
+        required: true
+      runner-labels:
+        description: JSON array of runner labels
+        type: string
+        default: '["self-hosted", "linux", "x64", "sonarqube"]'
+      working-directory:
+        description: Directory containing the Node.js project
+        type: string
+        default: .
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      SONAR_HOST_URL:
+        required: true
+
+jobs:
+  analyze:
+    runs-on: ${{ fromJson(inputs.runner-labels) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: npm install
+
+      - name: Run tests
+        working-directory: ${{ inputs.working-directory }}
+        run: npm test
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v7.1.0
+        with:
+          projectBaseDir: ${{ inputs.working-directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
