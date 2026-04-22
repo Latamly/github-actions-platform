@@ -14,7 +14,7 @@ on:
       runner-labels:
         description: JSON array of runner labels
         type: string
-        default: '["self-hosted", "linux", "x64", "sonarqube"]'
+        default: '["self-hosted", "linux", "x64"]'
       working-directory:
         description: Directory containing the Node.js project
         type: string
@@ -52,6 +52,8 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v7.1.0
         with:
           projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
