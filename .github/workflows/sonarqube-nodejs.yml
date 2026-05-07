@@ -15,6 +15,10 @@ on:
         description: JSON array of runner labels
         type: string
         default: '["self-hosted", "linux", "x64"]'
+      sonar-report-pr-comment:
+        description: Post SonarQube results as a PR comment
+        type: boolean
+        default: true
       working-directory:
         description: Directory containing the Node.js project
         type: string
@@ -59,6 +63,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: SonarQube Summary
+        id: sonarqube-summary
         if: always()
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -119,19 +124,65 @@ jobs:
 
           DASHBOARD_URL="${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY}"
 
-          cat >> $GITHUB_STEP_SUMMARY << EOF
-          ## SonarQube Report — \`${PROJECT_KEY}\`
+          REPORT_BODY=$(cat << EOF
+## SonarQube Report — \`${PROJECT_KEY}\`
 
-          **Quality Gate: ${QG_BADGE}**
+**Quality Gate: ${QG_BADGE}**
 
-          | Métrica | Valor | Rating |
-          |---------|-------|--------|
-          | Bugs | ${BUGS} | ${RELIABILITY} |
-          | Vulnerabilidades | ${VULNS} | ${SECURITY} |
-          | Security Hotspots | ${HOTSPOTS} | — |
-          | Code Smells | ${SMELLS} | ${MAINTAINABILITY} |
-          | Cobertura | ${COVERAGE}% | — |
-          | Duplicación | ${DUPLICATION}% | — |
+| Métrica | Valor | Rating |
+|---------|-------|--------|
+| Bugs | ${BUGS} | ${RELIABILITY} |
+| Vulnerabilidades | ${VULNS} | ${SECURITY} |
+| Security Hotspots | ${HOTSPOTS} | — |
+| Code Smells | ${SMELLS} | ${MAINTAINABILITY} |
+| Cobertura | ${COVERAGE}% | — |
+| Duplicación | ${DUPLICATION}% | — |
 
-          [Ver reporte completo en SonarQube](${DASHBOARD_URL})
-          EOF
+[Ver reporte completo en SonarQube](${DASHBOARD_URL})
+EOF
+)
+
+          echo "$REPORT_BODY" >> $GITHUB_STEP_SUMMARY
+
+          {
+            echo "report_body<<REPORT_DELIMITER"
+            echo "$REPORT_BODY"
+            echo "REPORT_DELIMITER"
+          } >> $GITHUB_OUTPUT
+
+      - name: SonarQube PR Comment
+        if: >
+          always() &&
+          inputs.sonar-report-pr-comment == true &&
+          github.event.pull_request.number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `${{ steps.sonarqube-summary.outputs.report_body }}`;
+            if (!body || body.trim() === '') {
+              console.log('No report body available, skipping PR comment.');
+              return;
+            }
+            const marker = '<!-- sonarqube-report -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            const fullBody = marker + '\n' + body;
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: fullBody,
+              });
+            }

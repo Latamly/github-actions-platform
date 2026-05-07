@@ -18,7 +18,11 @@ on:
       runner-labels:
         description: JSON array of runner labels
         type: string
-        default: '["self-hosted", "linux", "x64", "sonarqube"]'
+        default: '["self-hosted", "linux", "x64"]'
+      sonar-report-pr-comment:
+        description: Post SonarQube results as a PR comment
+        type: boolean
+        default: true
     secrets:
       SONAR_TOKEN:
         required: true
@@ -49,6 +53,133 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v7.1.0
         with:
           projectBaseDir: ${{ inputs.working-directory }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      - name: SonarQube Summary
+        id: sonarqube-summary
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          PROJECT_KEY: ${{ inputs.sonar-project-key }}
+        run: |
+          METRICS="bugs,vulnerabilities,security_hotspots,code_smells,coverage,duplicated_lines_density,reliability_rating,security_rating,sqale_rating,quality_gate_details"
+
+          RESPONSE=$(curl -sf -u "${SONAR_TOKEN}:" \
+            "${SONAR_HOST_URL}/api/measures/component?component=${PROJECT_KEY}&metricKeys=${METRICS}" || echo "ERROR")
+
+          if [ "$RESPONSE" = "ERROR" ]; then
+            echo "## SonarQube" >> $GITHUB_STEP_SUMMARY
+            echo "> No se pudo obtener el reporte. Verificar que el análisis haya completado y que el servidor sea accesible." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          get_metric() {
+            echo "$RESPONSE" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          measures = {m['metric']: m.get('value', 'N/A') for m in data['component']['measures']}
+          print(measures.get('$1', 'N/A'))
+          "
+          }
+
+          rating_label() {
+            case $1 in
+              1) echo "A" ;; 2) echo "B" ;; 3) echo "C" ;; 4) echo "D" ;; 5) echo "E" ;; *) echo "N/A" ;;
+            esac
+          }
+
+          BUGS=$(get_metric bugs)
+          VULNS=$(get_metric vulnerabilities)
+          HOTSPOTS=$(get_metric security_hotspots)
+          SMELLS=$(get_metric code_smells)
+          COVERAGE=$(get_metric coverage)
+          DUPLICATION=$(get_metric duplicated_lines_density)
+          RELIABILITY=$(rating_label $(get_metric reliability_rating | cut -d. -f1))
+          SECURITY=$(rating_label $(get_metric security_rating | cut -d. -f1))
+          MAINTAINABILITY=$(rating_label $(get_metric sqale_rating | cut -d. -f1))
+
+          QG_JSON=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          measures = {m['metric']: m.get('value', '{}') for m in data['component']['measures']}
+          qg = json.loads(measures.get('quality_gate_details', '{}'))
+          print(qg.get('level', 'NONE'))
+          ")
+
+          if [ "$QG_JSON" = "OK" ]; then
+            QG_BADGE="✅ Passed"
+          elif [ "$QG_JSON" = "ERROR" ]; then
+            QG_BADGE="❌ Failed"
+          else
+            QG_BADGE="⚠️ Unknown"
+          fi
+
+          DASHBOARD_URL="${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY}"
+
+          REPORT_BODY=$(cat << EOF
+## SonarQube Report — \`${PROJECT_KEY}\`
+
+**Quality Gate: ${QG_BADGE}**
+
+| Métrica | Valor | Rating |
+|---------|-------|--------|
+| Bugs | ${BUGS} | ${RELIABILITY} |
+| Vulnerabilidades | ${VULNS} | ${SECURITY} |
+| Security Hotspots | ${HOTSPOTS} | — |
+| Code Smells | ${SMELLS} | ${MAINTAINABILITY} |
+| Cobertura | ${COVERAGE}% | — |
+| Duplicación | ${DUPLICATION}% | — |
+
+[Ver reporte completo en SonarQube](${DASHBOARD_URL})
+EOF
+)
+
+          echo "$REPORT_BODY" >> $GITHUB_STEP_SUMMARY
+
+          {
+            echo "report_body<<REPORT_DELIMITER"
+            echo "$REPORT_BODY"
+            echo "REPORT_DELIMITER"
+          } >> $GITHUB_OUTPUT
+
+      - name: SonarQube PR Comment
+        if: >
+          always() &&
+          inputs.sonar-report-pr-comment == true &&
+          github.event.pull_request.number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `${{ steps.sonarqube-summary.outputs.report_body }}`;
+            if (!body || body.trim() === '') {
+              console.log('No report body available, skipping PR comment.');
+              return;
+            }
+            const marker = '<!-- sonarqube-report -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            const fullBody = marker + '\n' + body;
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: fullBody,
+              });
+            }
