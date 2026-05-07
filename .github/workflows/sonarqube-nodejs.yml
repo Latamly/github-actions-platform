@@ -124,20 +124,21 @@ jobs:
 
           DASHBOARD_URL="${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY}"
 
-          REPORT_BODY="## SonarQube Report — \`${PROJECT_KEY}\`
-
-**Quality Gate: ${QG_BADGE}**
-
-| Métrica | Valor | Rating |
-|---------|-------|--------|
-| Bugs | ${BUGS} | ${RELIABILITY} |
-| Vulnerabilidades | ${VULNS} | ${SECURITY} |
-| Security Hotspots | ${HOTSPOTS} | — |
-| Code Smells | ${SMELLS} | ${MAINTAINABILITY} |
-| Cobertura | ${COVERAGE}% | — |
-| Duplicación | ${DUPLICATION}% | — |
-
-[Ver reporte completo en SonarQube](${DASHBOARD_URL})"
+          REPORT_BODY=$(printf '%s\n' \
+            "## SonarQube Report — \`${PROJECT_KEY}\`" \
+            "" \
+            "**Quality Gate: ${QG_BADGE}**" \
+            "" \
+            "| Métrica | Valor | Rating |" \
+            "|---------|-------|--------|" \
+            "| Bugs | ${BUGS} | ${RELIABILITY} |" \
+            "| Vulnerabilidades | ${VULNS} | ${SECURITY} |" \
+            "| Security Hotspots | ${HOTSPOTS} | — |" \
+            "| Code Smells | ${SMELLS} | ${MAINTAINABILITY} |" \
+            "| Cobertura | ${COVERAGE}% | — |" \
+            "| Duplicación | ${DUPLICATION}% | — |" \
+            "" \
+            "[Ver reporte completo en SonarQube](${DASHBOARD_URL})")
 
           printf '%s\n' "$REPORT_BODY" >> $GITHUB_STEP_SUMMARY
 
