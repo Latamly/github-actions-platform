@@ -124,8 +124,7 @@ jobs:
 
           DASHBOARD_URL="${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY}"
 
-          REPORT_BODY=$(cat << EOF
-## SonarQube Report — \`${PROJECT_KEY}\`
+          REPORT_BODY="## SonarQube Report — \`${PROJECT_KEY}\`
 
 **Quality Gate: ${QG_BADGE}**
 
@@ -138,11 +137,9 @@ jobs:
 | Cobertura | ${COVERAGE}% | — |
 | Duplicación | ${DUPLICATION}% | — |
 
-[Ver reporte completo en SonarQube](${DASHBOARD_URL})
-EOF
-)
+[Ver reporte completo en SonarQube](${DASHBOARD_URL})"
 
-          echo "$REPORT_BODY" >> $GITHUB_STEP_SUMMARY
+          printf '%s\n' "$REPORT_BODY" >> $GITHUB_STEP_SUMMARY
 
           {
             echo "report_body<<REPORT_DELIMITER"
