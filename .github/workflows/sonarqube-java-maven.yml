@@ -19,6 +19,10 @@ on:
         description: Use Maven Wrapper (./mvnw) instead of system mvn
         type: boolean
         default: false
+      run-tests:
+        description: Run tests before SonarQube scan
+        type: boolean
+        default: true
       runner-labels:
         description: JSON array of runner labels
         type: string
@@ -51,8 +55,14 @@ jobs:
         run: chmod +x mvnw
 
       - name: Build and test
+        if: inputs.run-tests
         working-directory: ${{ inputs.working-directory }}
         run: ${{ inputs.use-maven-wrapper && './mvnw' || 'mvn' }} verify
+
+      - name: Build (skip tests)
+        if: "!inputs.run-tests"
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.use-maven-wrapper && './mvnw' || 'mvn' }} package -DskipTests
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7.1.0
