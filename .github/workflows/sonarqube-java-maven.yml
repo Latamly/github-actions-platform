@@ -15,6 +15,10 @@ on:
         description: Directory containing the Maven project
         type: string
         default: .
+      use-maven-wrapper:
+        description: Use Maven Wrapper (./mvnw) instead of system mvn
+        type: boolean
+        default: false
       runner-labels:
         description: JSON array of runner labels
         type: string
@@ -47,7 +51,7 @@ jobs:
 
       - name: Build and test
         working-directory: ${{ inputs.working-directory }}
-        run: mvn verify
+        run: ${{ inputs.use-maven-wrapper && './mvnw' || 'mvn' }} verify
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v7.1.0
