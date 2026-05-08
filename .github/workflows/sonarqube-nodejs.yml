@@ -19,6 +19,10 @@ on:
         description: Directory containing the Node.js project
         type: string
         default: .
+      run-tests:
+        description: Run tests before SonarQube scan
+        type: boolean
+        default: true
     secrets:
       SONAR_TOKEN:
         required: true
@@ -45,6 +49,7 @@ jobs:
         run: npm install
 
       - name: Run tests
+        if: inputs.run-tests
         working-directory: ${{ inputs.working-directory }}
         run: npm test
 
