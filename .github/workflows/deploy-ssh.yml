@@ -1,0 +1,34 @@
+name: Deploy via SSH
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directorio en el servidor remoto (ej: ~/benchmarking-lat)'
+        type: string
+        required: true
+      script:
+        description: 'Comandos a ejecutar en el servidor después de entrar al directorio'
+        type: string
+        required: true
+    secrets:
+      SSH_HOST:
+        required: true
+      SSH_USER:
+        required: true
+      SSH_PRIVATE_KEY:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ${{ inputs.working-directory }}
+            ${{ inputs.script }}
